@@ -1,38 +1,26 @@
-import geopandas as gpd
-from shapely.geometry import shape, box
 from rtree import index
 
-
 class GeoIndexer:
-    def __init__(self, geodata: gpd.GeoDataFrame):
-        """
-        :param geodata: A GeoDataFrame with geometric features (e.g., restricted zones)
-        """
+    """Builds an R-tree index for optional no-fly zones."""
+    def __init__(self, geodata):
         self.geodata = geodata
         self.spatial_index = None
 
     def build_spatial_index(self):
-        """Build an R-tree index for quick bounding-box queries."""
+        """Builds the spatial index if data exists."""
         if self.geodata is None or self.geodata.empty:
-            raise ValueError("No GeoDataFrame loaded for indexing.")
-
-        # R-tree index creation
+            return
         prop = index.Property()
         prop.interleaved = True
         self.spatial_index = index.Index(properties=prop)
-
         for idx, row in self.geodata.iterrows():
-            geom_bounds = row.geometry.bounds  # (minx, miny, maxx, maxy)
-            self.spatial_index.insert(idx, geom_bounds)
+            bounds = row.geometry.bounds
+            self.spatial_index.insert(idx, bounds)
 
-    def query(self, query_geom):
-        """
-        Query the R-tree index for features whose bounding boxes intersect with `query_geom`.
-        Returns a subset GeoDataFrame of matching features.
-        """
+    def query(self, geometry):
+        """Queries the index for intersecting geometries."""
         if not self.spatial_index:
-            raise RuntimeError("Spatial index not built. Call build_spatial_index() first.")
-
-        minx, miny, maxx, maxy = query_geom.bounds
+            return []
+        minx, miny, maxx, maxy = geometry.bounds
         candidate_ids = list(self.spatial_index.intersection((minx, miny, maxx, maxy)))
         return self.geodata.iloc[candidate_ids].copy()

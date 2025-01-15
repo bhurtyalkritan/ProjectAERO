@@ -1,54 +1,70 @@
+import math
 import networkx as nx
 from shapely.geometry import Point
-from cost_model import CostModel
+from config import DRONE_MAX_ELEVATION
 
 class PathPlanner:
-    def __init__(self, cost_model: CostModel):
+    """Performs A* routing with optional no-fly zone checks and elevation limits."""
+    def __init__(self, cost_model, geoindexer=None, maps_helper=None, ml_manager=None):
         self.graph = nx.Graph()
         self.cost_model = cost_model
+        self.geoindexer = geoindexer
+        self.maps_helper = maps_helper
+        self.ml_manager = ml_manager
 
-    def add_node(self, node_id, x, y, elevation=0):
-        """
-        Add a node to the graph with coordinates and optional elevation.
-        """
-        self.graph.add_node(node_id, coords=(x, y), elevation=elevation)
+    def add_node(self, node_id, lng, lat):
+        self.graph.add_node(node_id, coords=(lng, lat))
 
-    def add_edge(self, node_a, node_b, distance, time, risk_factor=1.0):
-        """
-        Add an edge between two nodes with a computed cost using the cost model.
-        """
-        cost = self.cost_model.compute_edge_cost(distance, time, risk_factor)
-        self.graph.add_edge(node_a, node_b, weight=cost, distance=distance,
-                            time=time, risk_factor=risk_factor)
+    def add_edge(self, node_a, node_b, distance, time, base_risk=1.0):
+        c = self.cost_model.compute_edge_cost(distance, time, base_risk)
+        self.graph.add_edge(node_a, node_b, weight=c, distance=distance, time=time, base_risk=base_risk)
 
-    def plan_route_a_star(self, start_node, goal_node):
-        """
-        Compute the least-cost path using A* search.
-        We'll define a heuristic as the direct distance (straight-line)
-        between nodes, or 0 if we want uniform-cost search.
-        """
+    def plan_route_a_star(self, start_node, goal_node, drone_id=None, conditions=None):
+        if conditions is None:
+            conditions = {}
+        if self.ml_manager and drone_id:
+            ml_risk_factor = self.ml_manager.get_risk_factor(drone_id, conditions)
+        else:
+            ml_risk_factor = 1.0
 
         def heuristic(u, v):
-            # Use Euclidean distance as a heuristic
-            x1, y1 = self.graph.nodes[u]['coords']
-            x2, y2 = self.graph.nodes[v]['coords']
-            return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+            (lng1, lat1) = self.graph.nodes[u]['coords']
+            (lng2, lat2) = self.graph.nodes[v]['coords']
+            return math.dist((lng1, lat1), (lng2, lat2))
+
+        # Adjust edge weights by ML risk factor
+        for (u, v, data) in self.graph.edges(data=True):
+            base = data["weight"]
+            self.graph[u][v]["weight"] = base * ml_risk_factor
 
         try:
-            path = nx.astar_path(self.graph, start_node, goal_node,
-                                 heuristic=heuristic, weight='weight')
+            path = nx.astar_path(self.graph, start_node, goal_node, heuristic=heuristic, weight="weight")
+            if not self._check_path_constraints(path):
+                return None
             return path
         except nx.NetworkXNoPath:
             return None
 
+    def _check_path_constraints(self, path):
+        for node in path:
+            lng, lat = self.graph.nodes[node]['coords']
+            pt = Point(lng, lat)
+            if self.geoindexer:
+                hits = self.geoindexer.query(pt.buffer(0.0001))
+                for _, row in hits.iterrows():
+                    if row.geometry.intersects(pt):
+                        return False
+            if self.maps_helper:
+                elev = self.maps_helper.get_elevation(lat, lng)
+                if elev > DRONE_MAX_ELEVATION:
+                    return False
+        return True
+
     def get_path_cost(self, path):
-        """
-        Sum up the edge weights along the path.
-        """
         if not path or len(path) < 2:
-            return float('inf')
-        total_cost = 0
+            return float("inf")
+        total = 0
         for i in range(len(path) - 1):
-            edge_data = self.graph.get_edge_data(path[i], path[i+1])
-            total_cost += edge_data.get('weight', 0)
-        return total_cost
+            data = self.graph[path[i]][path[i+1]]
+            total += data["weight"]
+        return total
