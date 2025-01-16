@@ -30,7 +30,6 @@ class RealTimeDataManager:
             time.sleep(self.poll_interval)
 
     def _fetch_weather_and_aqi(self):
-        """Fetches weather & AQI from OpenWeatherMap."""
         url = "http://api.openweathermap.org/data/2.5/weather"
         params = {"q": self.city, "appid": self.api_key, "units": "metric"}
         weather_resp = requests.get(url, params=params).json()
