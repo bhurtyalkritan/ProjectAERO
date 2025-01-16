@@ -11,12 +11,14 @@ class DroneScheduler:
         self.drones = drones
         self.running = False
         self.thread = None
+        self.deliver_callback = None
 
-    def start(self):
+    def start(self, deliver_callback):
         """Starts the background simulation thread."""
         if self.running:
             return
         self.running = True
+        self.deliver_callback = deliver_callback
         self.thread = threading.Thread(target=self._update_loop, daemon=True)
         self.thread.start()
 
@@ -42,6 +44,8 @@ class DroneScheduler:
                     d.next_waypoint_index += 1
                     if d.next_waypoint_index >= len(d.route):
                         d.is_moving = False
+                        if self.deliver_callback:
+                            self.deliver_callback(d.drone_id)
                 else:
                     ratio = step / dist
                     d.lat += (next_lat - curr_lat) * ratio
