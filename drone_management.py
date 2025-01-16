@@ -11,6 +11,11 @@ class Package:
         self.cost = None
         self.outcome = None
 
+PHASE_IDLE = "idle"
+PHASE_DELIVERY = "delivery"
+PHASE_RETURN = "return"
+
+
 class Drone:
     """Represents a drone with location, route, assigned package, and movement state."""
     def __init__(self, drone_id, lat, lng):
@@ -21,3 +26,4 @@ class Drone:
         self.current_package_id = None
         self.is_moving = False
         self.next_waypoint_index = 0
+        self.phase = PHASE_IDLE

@@ -1,3 +1,4 @@
+# geoindexing.py
 from rtree import index
 
 class GeoIndexer:
