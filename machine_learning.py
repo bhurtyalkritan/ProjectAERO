@@ -21,7 +21,6 @@ class DroneMLManager:
         """Returns a derived risk factor from Q-value."""
         state = self.get_state_key(drone_id, conditions)
         q_val = self.q_table.get(state, 1.0)
-        # Add slight random noise to keep exploration
         noise = random.uniform(-0.05, 0.05)
         return max(0.1, q_val + noise)
 
